@@ -294,3 +294,48 @@ fn cooldown_not_triggered_on_gcd() {
     let cooldowns: &CooldownState<Action> = app.world().resource();
     assert!(cooldowns.ready(&Action::Short).is_ok());
 }
+
+#[test]
+fn shared_cooldowns() {
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        AbilityPlugin::<Action>::default(),
+        InputPlugin,
+    ))
+    .insert_resource(
+        Action::cooldowns()
+            .set_shared(Action::Long, Action::Short)
+            .build(),
+    );
+
+    // First delta time provided of each app is wonky
+    app.update();
+
+    let mut cooldowns: Mut<CooldownState<Action>> = app.world_mut().resource_mut();
+    let _ = cooldowns.trigger(&Action::Short);
+    assert_eq!(
+        cooldowns.ready(&Action::Short),
+        Err(CannotUseAbility::OnCooldown),
+    );
+
+    assert_eq!(
+        cooldowns.ready(&Action::Long),
+        Err(CannotUseAbility::OnSharedCooldown),
+    );
+
+    // Let per-action cooldown elapse
+    sleep(Duration::from_millis(250));
+    app.update();
+
+    let mut cooldowns: Mut<CooldownState<Action>> = app.world_mut().resource_mut();
+    assert!(cooldowns.ready(&Action::Short).is_ok());
+    assert!(cooldowns.ready(&Action::Long).is_ok());
+
+    let _ = cooldowns.trigger(&Action::Long);
+    assert!(cooldowns.ready(&Action::Short).is_ok());
+    assert_eq!(
+        cooldowns.ready(&Action::Long),
+        Err(CannotUseAbility::OnCooldown),
+    );
+}

@@ -5,7 +5,7 @@ use crate::{
     Abilitylike, CannotUseAbility,
 };
 
-use bevy::utils::Duration;
+use bevy::utils::{Duration, HashSet};
 use bevy::{
     ecs::prelude::{Component, Resource},
     reflect::Reflect,
@@ -58,6 +58,8 @@ pub struct CooldownState<A: Abilitylike> {
     ///
     /// If [`None`], the action can always be used
     cooldown_map: HashMap<A, Cooldown>,
+    /// Actions that share a [`Cooldown`] with other actions
+    shared_cooldowns: HashMap<A, HashSet<A>>,
     /// A shared cooldown between all actions of type `A`.
     ///
     /// No action of type `A` will be ready unless this is ready.
@@ -73,6 +75,7 @@ impl<A: Abilitylike> Default for CooldownState<A> {
     fn default() -> Self {
         CooldownState {
             cooldown_map: HashMap::new(),
+            shared_cooldowns: HashMap::new(),
             global_cooldown: None,
             _phantom: PhantomData,
         }
@@ -147,6 +150,15 @@ impl<A: Abilitylike> CooldownState<A> {
             cooldown.ready()?;
         }
 
+        if let Some(shared_cooldowns) = self.shared_cooldowns.get(action) {
+            if shared_cooldowns.iter().any(|shared_action| {
+                self.get(shared_action)
+                    .is_some_and(|cd| cd.ready().is_err())
+            }) {
+                return Err(CannotUseAbility::OnSharedCooldown);
+            }
+        }
+
         self.gcd_ready()
     }
 
@@ -208,6 +220,16 @@ impl<A: Abilitylike> CooldownState<A> {
         self
     }
 
+    /// Set a shared cooldown for the specified `action`.
+    #[inline]
+    pub fn set_shared(&mut self, action: A, shared: A) -> &mut Self {
+        self.shared_cooldowns
+            .entry(action)
+            .or_default()
+            .push(shared);
+        self
+    }
+
     /// Collects a `&mut Self` into a `Self`.
     ///
     /// Used to conclude the builder pattern. Actually just calls `self.clone()`.
@@ -261,7 +283,7 @@ impl<A: Abilitylike> CooldownState<A> {
 #[derive(Clone, Default, PartialEq, Eq, Debug, Serialize, Deserialize, Reflect)]
 pub struct Cooldown {
     max_time: Duration,
-    /// The amount of time that has elapsed since all [`Charges`](crate::charges::Charges) were fully replenished.
+    /// The amount of time that has elapsed since all [`Charges`](Charges) were fully replenished.
     elapsed_time: Duration,
 }
 
@@ -273,7 +295,7 @@ impl Cooldown {
     /// The provided max time cannot be [`Duration::ZERO`].
     /// Instead, use [`None`] in the [`Cooldowns`] struct for an action without a cooldown.
     pub fn new(max_time: Duration) -> Cooldown {
-        assert!(max_time != Duration::ZERO);
+        assert_ne!(max_time, Duration::ZERO);
 
         Cooldown {
             max_time,
@@ -304,7 +326,7 @@ impl Cooldown {
             return;
         }
 
-        assert!(self.max_time != Duration::ZERO);
+        assert_ne!(self.max_time, Duration::ZERO);
 
         if let Some(charges) = charges {
             let total_time = self.elapsed_time.saturating_add(delta_time);
@@ -379,7 +401,7 @@ impl Cooldown {
     /// Instead, use [`None`] in the [`Cooldowns`] struct for an action without a cooldown.
     #[inline]
     pub fn set_max_time(&mut self, max_time: Duration) {
-        assert!(max_time != Duration::ZERO);
+        assert_ne!(max_time, Duration::ZERO);
 
         self.max_time = max_time;
         self.elapsed_time = self.elapsed_time.min(max_time);

@@ -3,6 +3,7 @@
 #![warn(clippy::doc_markdown)]
 #![doc = include_str!("../README.md")]
 
+use std::borrow::Cow;
 use crate::cooldown::CooldownState;
 use bevy::{ecs::prelude::*, reflect::Reflect};
 use charges::{ChargeState, Charges};
@@ -171,6 +172,9 @@ pub enum CannotUseAbility {
     /// The Global [`Cooldown`] for this [`CooldownState`] was not ready
     #[error("Global cooldown not ready.")]
     OnGlobalCooldown,
+    /// A Shared [`Cooldown`] for this [`Actionlike`] was not ready
+    #[error("Shared cooldown not ready.")]
+    OnSharedCooldown,
     /// Not enough resources from the corresponding [`Pool`]s are available
     #[error("Not enough resources.")]
     PoolInsufficient,
